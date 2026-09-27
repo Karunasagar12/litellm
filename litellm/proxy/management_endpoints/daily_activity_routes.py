@@ -41,6 +41,8 @@ from litellm.types.proxy.management_endpoints.common_daily_activity import (
     DailyActivityKeySearchResponse,
     KeyActivityRow,
     KeyMetadata,
+    KeySpendActivityRow,
+    KeySpendMetrics,
     ModelTopKeysResponse,
     SpendAnalyticsPaginatedResponse,
     SpendMetrics,
@@ -127,10 +129,10 @@ def _key_metadata(api_key: str, metadata: Mapping[str, KeyMetadataRow]) -> KeyMe
     )
 
 
-def _key_activity_row(row: KeySpendRow, metadata: Mapping[str, KeyMetadataRow]) -> KeyActivityRow:
-    return KeyActivityRow(
+def _key_activity_row(row: KeySpendRow, metadata: Mapping[str, KeyMetadataRow]) -> KeySpendActivityRow:
+    return KeySpendActivityRow(
         api_key=row.api_key,
-        metrics=SpendMetrics(
+        metrics=KeySpendMetrics(
             spend=row.spend,
             prompt_tokens=row.prompt_tokens,
             completion_tokens=row.completion_tokens,
@@ -149,7 +151,7 @@ async def _key_activity_rows(
     repository: DailyActivityRepository,
     rows: Sequence[KeySpendRow],
     resolved_scope: ResolvedScope,
-) -> list[KeyActivityRow]:
+) -> list[KeySpendActivityRow]:
     spend_window: Final[tuple[datetime, datetime] | None] = spend_logs_window(
         frozenset((resolved_scope.scope.start_date, resolved_scope.scope.end_date))
     )
@@ -211,22 +213,20 @@ def _csv_row(values: Sequence[object]) -> bytes:
 
 
 def _stream_export_rows(
-    repository: DailyActivityRepository,
-    resolved_scope: ResolvedScope,
-    export_type: ExportType,
+    first_row: ExportRow | None,
+    rows: AsyncIterator[ExportRow],
     file_format: Literal["csv", "json"],
 ) -> AsyncIterator[bytes]:
     async def stream() -> AsyncIterator[bytes]:
         if file_format == "csv":
             yield _csv_row(tuple(field.name for field in fields(ExportRow)))
-            async for row in repository.export_rows(resolved_scope.scope, export_type=export_type):
+            if first_row is not None:
+                yield _csv_row(tuple(asdict(first_row).values()))
+            async for row in rows:
                 yield _csv_row(tuple(asdict(row).values()))
             return
 
-        rows: Final = repository.export_rows(resolved_scope.scope, export_type=export_type)
-        try:
-            first_row: Final[ExportRow] = await anext(rows)
-        except StopAsyncIteration:
+        if first_row is None:
             yield b"[]"
             return
         yield b"[" + json.dumps(jsonable_encoder(first_row), separators=(",", ":")).encode()
@@ -419,8 +419,10 @@ def _register_export_route(router: APIRouter, resolver: EntityScopeResolver, pre
                 prisma_client,
                 user_aggregated=False,
             )
+            rows: Final = repository.export_rows(resolved.scope, export_type=export_type)
+            first_row: Final = await anext(rows, None)
             return StreamingResponse(
-                _stream_export_rows(repository, resolved, export_type, file_format),
+                _stream_export_rows(first_row, rows, file_format),
                 media_type="text/csv" if file_format == "csv" else "application/json",
                 headers={
                     "Cache-Control": "no-store",

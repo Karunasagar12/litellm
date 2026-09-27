@@ -20,6 +20,7 @@ from litellm.proxy.management_endpoints.daily_activity_routes import (
     get_daily_activity_repository,
     router,
 )
+from litellm.types.proxy.management_endpoints.common_daily_activity import KeySpendMetrics, SpendMetrics
 from litellm.types.repositories.daily_activity import (
     AggregatedRows,
     DailyActivityScope,
@@ -231,6 +232,7 @@ class _FakeRepository:
         self.model_top_keys = AsyncMock(side_effect=self._model_top_keys)
         self.cache_leakage_keys = AsyncMock(side_effect=self._cache_leakage_keys)
         self.key_metadata = AsyncMock(side_effect=self._key_metadata)
+        self.export_rows_error: Exception | None = None
 
     def _matching_rows(self, scope: DailyActivityScope) -> tuple[_Activity, ...]:
         return tuple(
@@ -310,6 +312,8 @@ class _FakeRepository:
         }
 
     async def export_rows(self, scope: DailyActivityScope, *, export_type: ExportType) -> AsyncIterator[ExportRow]:
+        if self.export_rows_error is not None:
+            raise self.export_rows_error
         for row in self._matching_rows(scope):
             yield ExportRow(
                 date=row.date,
@@ -605,6 +609,10 @@ def test_search_finds_keys_outside_the_top_keys_limit_and_skips_empty_aggregate(
     assert search_response.status_code == 200, search_response.text
     assert search_response.json()["api_keys"][0]["api_key"] == "key-target"
     assert search_response.json()["api_keys"][0]["metrics"]["spend"] == pytest.approx(0.5)
+    search_metrics: Final = search_response.json()["api_keys"][0]["metrics"]
+    assert set(search_metrics) == set(SpendMetrics.model_fields)
+    assert search_metrics["compression_savings_spend"] == pytest.approx(0.1)
+    assert search_metrics["total_response_time_ms"] == 100
 
     repository.aggregated.reset_mock()
     empty_response: Final = client.get(
@@ -632,7 +640,21 @@ def test_model_top_routes_rank_keys_and_include_metadata(
     assert response.json()["model"] == "rare-group"
     assert response.json()["by_model_group"] is True
     assert tuple(row["api_key"] for row in response.json()["api_keys"]) == ("key-target",)
-    assert response.json()["api_keys"][0]["metrics"]["spend"] == pytest.approx(0.5)
+    metrics: Final = response.json()["api_keys"][0]["metrics"]
+    expected_row: Final = KeySpendRow(
+        api_key="key-target",
+        spend=0.5,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        api_requests=1,
+        successful_requests=1,
+        failed_requests=0,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=1,
+    )
+    assert set(metrics) == set(KeySpendMetrics.model_fields)
+    assert metrics == {field: getattr(expected_row, field) for field in KeySpendMetrics.model_fields}
 
 
 @pytest.mark.parametrize(("prefix", "query_name", "entity_id"), _ENTITY_CASES)
@@ -681,6 +703,45 @@ def test_export_routes_stream_json_arrays(
     assert isinstance(records, list) and len(records) == 6, response.text
     assert len(records) > constants.USAGE_TOP_API_KEYS_LIMIT
     assert records[0]["entity_alias"] == "=entity"
+
+
+def test_export_first_row_error_returns_json_error_before_streaming(
+    daily_activity_client: tuple[TestClient, _FakeRepository],
+) -> None:
+    client, repository = daily_activity_client
+    repository.export_rows_error = RuntimeError("database query failed")
+    response: Final = client.get(
+        "/team/daily/activity/export",
+        params={**_entity_params("team_ids", "team-a"), "format": "csv"},
+    )
+    assert response.status_code >= 400
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.text != ",".join(field.name for field in fields(ExportRow)) + "\r\n"
+    assert "database query failed" in response.text
+
+
+def test_csv_export_with_no_rows_contains_only_header(
+    daily_activity_client: tuple[TestClient, _FakeRepository],
+) -> None:
+    client, _ = daily_activity_client
+    response: Final = client.get(
+        "/team/daily/activity/export",
+        params={**_entity_params("team_ids", "team-a"), "api_key": "missing-key"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.text == ",".join(field.name for field in fields(ExportRow)) + "\r\n"
+
+
+def test_json_export_with_no_rows_is_an_empty_array(
+    daily_activity_client: tuple[TestClient, _FakeRepository],
+) -> None:
+    client, _ = daily_activity_client
+    response: Final = client.get(
+        "/team/daily/activity/export",
+        params={**_entity_params("team_ids", "team-a"), "api_key": "missing-key", "format": "json"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == []
 
 
 def test_user_routes_preserve_scope_denials_and_service_account_guard(
@@ -877,7 +938,21 @@ def test_user_cache_leakage_route_returns_cache_keys_and_metadata(
     )
     assert response.status_code == 200, response.text
     assert tuple(row["api_key"] for row in response.json()["api_keys"]) == ("key-cache",)
-    assert response.json()["api_keys"][0]["metrics"]["cache_read_input_tokens"] == 20
+    metrics: Final = response.json()["api_keys"][0]["metrics"]
+    expected_row: Final = KeySpendRow(
+        api_key="key-cache",
+        spend=2.0,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        api_requests=1,
+        successful_requests=1,
+        failed_requests=0,
+        cache_read_input_tokens=20,
+        cache_creation_input_tokens=1,
+    )
+    assert set(metrics) == set(KeySpendMetrics.model_fields)
+    assert metrics == {field: getattr(expected_row, field) for field in KeySpendMetrics.model_fields}
     assert response.json()["api_keys"][0]["metadata"]["key_alias"] == "alias-key-cache"
     repository.cache_leakage_keys.assert_awaited_once()
     repository.key_metadata.assert_awaited_once()
