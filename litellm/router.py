@@ -1721,7 +1721,7 @@ class Router:
             normalized for normalized in map(self._normalize_strategy, configured) if normalized is not None
         )
 
-    def arm_routing_read_prefetch(self, model: str, request_kwargs: dict | None = None) -> None:
+    def arm_routing_read_prefetch(self, model: str, request_kwargs: dict[str, object] | None = None) -> None:
         """Declare the cooldown read (and, for usage-based routing, the usage read) that
         `async_get_available_deployment` will make for `model` on the request's Redis batch, so admission's
         flush carries it. A miss (alias, no batch) costs nothing: routing then reads as it always has."""

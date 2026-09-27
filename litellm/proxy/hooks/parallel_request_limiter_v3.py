@@ -2042,7 +2042,9 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
     ) -> RateLimitResponse:
         """Every group's Lua call left in one pipeline, so each group has already checked and incremented on
         its own before any result is read. A failed or over-limit group therefore refunds every group that
-        incremented, after it as well as before it, where the one-at-a-time loop only unwinds the groups it ran."""
+        incremented, after it as well as before it, where the one-at-a-time loop only unwinds the groups it ran.
+        A Redis denial stands even when another group failed: the in-memory fallback only replaces a verdict
+        Redis never gave."""
         replies: Final = await asyncio.gather(*results, return_exceptions=True)
         responses: Final = [
             self._pipelined_group_response(reply, meta)
@@ -2058,6 +2060,12 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             statuses.extend(response["statuses"])
             reservation_windows.update(response.get("reservation_windows", frozenset()))
 
+        over_limit: Final = next(
+            (r for r in responses if not isinstance(r, BaseException) and r["overall_code"] == "OVER_LIMIT"), None
+        )
+        if over_limit is not None:
+            await self._refund_applied_descriptor_groups(applied)
+            return over_limit
         failure: Final = next((r for r in responses if isinstance(r, BaseException)), None)
         if failure is not None:
             log_redis_failure(
@@ -2077,12 +2085,6 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                     per_counter_meta=flat_meta,
                     parent_otel_span=parent_otel_span,
                 )
-        over_limit: Final = next(
-            (r for r in responses if not isinstance(r, BaseException) and r["overall_code"] == "OVER_LIMIT"), None
-        )
-        if over_limit is not None:
-            await self._refund_applied_descriptor_groups(applied)
-            return over_limit
         if len(responses) == 1 and not isinstance(responses[0], BaseException):
             return responses[0]
         return RateLimitResponse(

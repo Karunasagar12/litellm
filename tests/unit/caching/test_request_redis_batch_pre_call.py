@@ -145,6 +145,40 @@ async def test_an_over_limit_descriptor_also_refunds_the_groups_the_pipeline_inc
 
 
 @pytest.mark.asyncio
+async def test_a_redis_denial_stands_when_another_pipelined_group_fails():
+    def replies(command: tuple[Any, ...]) -> Any:
+        if command[0] == "EVALSHA" and command[3] == "{api_key:k1}:window":
+            return [1, 1, 11, 10]  # OVER_LIMIT
+        if command[0] == "EVALSHA" and command[3] == "{team:t1}:window":
+            return ValueError("script blew up")
+        return _lua_ok_replies(command)
+
+    client = FakeClient(replies)
+    limiter = _limiter(FakeRedisCache(client))
+    refunded: list[list[str]] = []
+
+    async def _refund(applied):
+        refunded.append([m["counter_key"] for group in applied for m in group])
+
+    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+
+    with request_redis_batch_scope():
+        response = await limiter.atomic_check_and_increment_by_n(
+            descriptors=[
+                _descriptor("api_key", "k1", 10),
+                _descriptor("team", "t1", 20),
+                _descriptor("model_per_key", "k1:gpt", 5),
+            ],  # type: ignore[arg-type]
+            increments=[{"requests": 1}, {"requests": 1}, {"requests": 1}],
+        )
+
+    assert response["overall_code"] == "OVER_LIMIT"  # not the in-memory fallback's verdict
+    assert response["statuses"][0]["descriptor_key"] == "api_key"
+    assert refunded == [["{model_per_key:k1:gpt}:requests"]]
+    assert len(client.pipelines) == 1
+
+
+@pytest.mark.asyncio
 async def test_one_failed_lua_group_refunds_the_other_pipelined_groups_and_falls_back_to_in_memory():
     def replies(command: tuple[Any, ...]) -> Any:
         if command[0] == "EVALSHA" and command[3] == "{api_key:k1}:window":
