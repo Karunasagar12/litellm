@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
 import { cacheLeakageKeysCall } from "@/components/networking";
-import type { KeyActivityRow } from "@/components/UsagePage/dailyActivityApi";
+import type { KeySpendActivityRow } from "@/components/UsagePage/dailyActivityApi";
 import type { DailyActivityRange } from "./useDailyActivityRange";
 
 interface CacheLeakageKeysResult {
-  rows: KeyActivityRow[];
+  rows: KeySpendActivityRow[];
   loading: boolean;
   failed: boolean;
 }
 
 interface SettledKeys {
   key: string;
-  rows: KeyActivityRow[];
+  rows: KeySpendActivityRow[];
   failed: boolean;
 }
 

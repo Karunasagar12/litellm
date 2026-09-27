@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { components } from "@/lib/http/schema";
-import type { KeyActivityRow } from "@/components/UsagePage/dailyActivityApi";
+import type { KeySpendActivityRow } from "@/components/UsagePage/dailyActivityApi";
 import { EMPTY_DAILY_ACTIVITY_METADATA } from "@/components/UsagePage/dailyActivityApi";
 import type { DailyData, SpendMetrics } from "@/components/UsagePage/types";
 import type { DailyActivityRange } from "./useDailyActivityRange";
@@ -41,7 +41,7 @@ const baseMetrics = (overrides: Partial<SpendMetrics>): components["schemas"]["S
   ...overrides,
 });
 
-const keyRow = (hash: string, alias: string, metrics: Partial<SpendMetrics>): KeyActivityRow => ({
+const keyRow = (hash: string, alias: string, metrics: Partial<SpendMetrics>): KeySpendActivityRow => ({
   api_key: hash,
   metrics: baseMetrics(metrics),
   metadata: { key_alias: alias, team_id: null },

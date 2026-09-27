@@ -7,7 +7,8 @@ export type DailyActivityMetadata = components["schemas"]["DailySpendMetadata"];
 export type ExportType = components["schemas"]["ExportType"];
 export type ExportFormat = "csv" | "json";
 
-export type KeyActivityRow = components["schemas"]["KeySpendActivityRow"];
+export type KeyActivityRow = components["schemas"]["KeyActivityRow"];
+export type KeySpendActivityRow = components["schemas"]["KeySpendActivityRow"];
 export type DailyActivityKeySearchResponse = components["schemas"]["DailyActivityKeySearchResponse"];
 export type ModelTopKeysResponse = components["schemas"]["ModelTopKeysResponse"];
 export type CacheLeakageKeysResponse = components["schemas"]["CacheLeakageKeysResponse"];

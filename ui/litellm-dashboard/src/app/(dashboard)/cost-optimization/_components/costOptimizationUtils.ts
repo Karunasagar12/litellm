@@ -1,4 +1,4 @@
-import type { KeyActivityRow } from "@/components/UsagePage/dailyActivityApi";
+import type { KeySpendActivityRow } from "@/components/UsagePage/dailyActivityApi";
 import { DailyData, SpendMetrics } from "@/components/UsagePage/types";
 import { ToolSpendDailyEntry, ToolSpendEntry } from "@/components/networking";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
@@ -148,7 +148,7 @@ const sortAndLimit = (rows: CacheLeakageRow[], rate: number | null, limit: numbe
     .slice(0, limit);
 
 export const leakageRowsFromKeyRows = (
-  rows: readonly KeyActivityRow[],
+  rows: readonly KeySpendActivityRow[],
   rate: number | null,
   limit = 10,
 ): CacheLeakageRow[] =>

@@ -22,6 +22,8 @@ export const keyActivityRowsToMetrics = (
         prompt_tokens: row.metrics.prompt_tokens,
         completion_tokens: row.metrics.completion_tokens,
         total_spend: row.metrics.spend,
+        total_response_time_ms: row.metrics.total_response_time_ms,
+        total_timed_requests: row.metrics.timed_requests,
         top_models: [],
         daily_data: [],
       };
