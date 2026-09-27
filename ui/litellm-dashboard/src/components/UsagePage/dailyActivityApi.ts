@@ -10,7 +10,7 @@ import type {
 export type DailyActivityEntity = "user" | "team" | "tag" | "organization" | "customer" | "agent";
 export type DailyActivityAggregatedResponse = components["schemas"]["SpendAnalyticsPaginatedResponse"];
 export type DailyActivityMetadata = components["schemas"]["DailySpendMetadata"];
-export type ExportType = "daily" | "daily_with_keys" | "daily_with_models" | "daily_with_users"; // CONTRACT (server ExportType enum)
+export type ExportType = components["schemas"]["ExportType"];
 export type ExportFormat = "csv" | "json";
 
 export type KeyActivityRow = components["schemas"]["KeyActivityRow"];
