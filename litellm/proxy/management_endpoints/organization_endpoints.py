@@ -64,6 +64,7 @@ from litellm.proxy.management_helpers.utils import (
 )
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from litellm.repositories.budget_repository import BudgetRepository
+from litellm.repositories.chunked_in import find_many_in
 from litellm.repositories.object_permission_repository import ObjectPermissionRepository
 from litellm.repositories.organization_repository import OrganizationRepository
 from litellm.repositories.table_repositories import OrganizationMembershipRepository
@@ -647,10 +648,12 @@ async def resolve_organization_daily_activity_scope(
         organization_ids if is_admin or organization_ids is not None else admin_organization_ids
     )
 
-    where_condition: Final[Mapping[str, object]] = (
-        {"organization_id": {"in": list(resolved_organization_ids)}} if resolved_organization_ids is not None else {}
+    organization_table: Final = _table(OrganizationRepository(prisma_client))
+    organization_rows: Final = (
+        await find_many_in(organization_table, "organization_id", resolved_organization_ids)
+        if resolved_organization_ids is not None
+        else await organization_table.find_many(where={})
     )
-    organization_rows: Final = await _table(OrganizationRepository(prisma_client)).find_many(where=where_condition)
     metadata: Final = MappingProxyType(
         {
             organization.organization_id: {"organization_alias": organization.organization_alias}
