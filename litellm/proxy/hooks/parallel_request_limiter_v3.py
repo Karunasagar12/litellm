@@ -1816,7 +1816,8 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         self, counter_keys: list[str], slot_id: str, parent_otel_span: Span | None
     ) -> bool:
         """The local gauge frees the slot at once, so admission on this worker sees the capacity before the
-        pipeline goes out; the Redis count replaces it when the release settles."""
+        pipeline goes out. The count Redis returns from the pipeline is not mirrored: by then a newer acquire
+        on this worker may have written a fresher count, and the next acquire refreshes the gauge anyway."""
         redis_cache: Final = self.internal_usage_cache.dual_cache.redis_cache
         script: Final = self.parallel_release_script
         batch: Final = None if redis_cache is None else active_post_call_redis_batch(redis_cache)
@@ -1832,10 +1833,6 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                     "parallel_release_script failed, the slot stays released in memory only",
                     future.exception() if not future.cancelled() else asyncio.CancelledError(),
                 )
-                return
-            raw: Final = future.result()
-            if isinstance(raw, list):
-                await self._mirror_released_parallel_slots(counter_keys, raw, parent_otel_span)
 
         batch.script(PARALLEL_RELEASE_SCRIPT, script, counter_keys, [slot_id for _ in counter_keys]).on_settled(settle)
         return True

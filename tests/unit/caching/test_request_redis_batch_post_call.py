@@ -239,7 +239,7 @@ async def test_a_failed_slot_release_script_releases_the_slot_in_memory():
 
 
 @pytest.mark.asyncio
-async def test_a_released_slot_is_free_locally_at_once_and_the_redis_count_replaces_it_when_the_pipeline_settles():
+async def test_a_released_slot_is_free_locally_at_once_and_the_older_redis_count_does_not_overwrite_the_gauge():
     def replies(command: tuple[Any, ...]) -> Any:
         if command[0] == "EVALSHA":
             return [2]
@@ -255,9 +255,10 @@ async def test_a_released_slot_is_free_locally_at_once_and_the_redis_count_repla
             ParallelSlotAcquisition(slot_id="slot-1", counter_keys=["{api_key:k1}:parallel"])
         )
         assert await memory.async_get_cache("{api_key:k1}:parallel") == {"slot-2": 1.0, "slot-3": 1.0}
+        await memory.async_set_cache("{api_key:k1}:parallel", {"slot-2": 1.0, "slot-3": 1.0, "slot-4": 1.0})
         await flush_post_call_redis_batches()
 
-    assert await memory.async_get_cache("{api_key:k1}:parallel") == 2
+    assert await memory.async_get_cache("{api_key:k1}:parallel") == {"slot-2": 1.0, "slot-3": 1.0, "slot-4": 1.0}
 
 
 @pytest.mark.asyncio
