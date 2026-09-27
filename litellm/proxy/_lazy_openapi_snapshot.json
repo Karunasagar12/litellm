@@ -3621,6 +3621,78 @@
           "title": "KeyMetricWithMetadata",
           "type": "object"
         },
+        "KeySpendActivityRow": {
+          "properties": {
+            "api_key": {
+              "title": "Api Key",
+              "type": "string"
+            },
+            "metadata": {
+              "$ref": "#/components/schemas/KeyMetadata"
+            },
+            "metrics": {
+              "$ref": "#/components/schemas/KeySpendMetrics"
+            }
+          },
+          "required": [
+            "api_key",
+            "metrics",
+            "metadata"
+          ],
+          "title": "KeySpendActivityRow",
+          "type": "object"
+        },
+        "KeySpendMetrics": {
+          "properties": {
+            "api_requests": {
+              "default": 0,
+              "title": "Api Requests",
+              "type": "integer"
+            },
+            "cache_creation_input_tokens": {
+              "default": 0,
+              "title": "Cache Creation Input Tokens",
+              "type": "integer"
+            },
+            "cache_read_input_tokens": {
+              "default": 0,
+              "title": "Cache Read Input Tokens",
+              "type": "integer"
+            },
+            "completion_tokens": {
+              "default": 0,
+              "title": "Completion Tokens",
+              "type": "integer"
+            },
+            "failed_requests": {
+              "default": 0,
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "prompt_tokens": {
+              "default": 0,
+              "title": "Prompt Tokens",
+              "type": "integer"
+            },
+            "spend": {
+              "default": 0.0,
+              "title": "Spend",
+              "type": "number"
+            },
+            "successful_requests": {
+              "default": 0,
+              "title": "Successful Requests",
+              "type": "integer"
+            },
+            "total_tokens": {
+              "default": 0,
+              "title": "Total Tokens",
+              "type": "integer"
+            }
+          },
+          "title": "KeySpendMetrics",
+          "type": "object"
+        },
         "MakeAgentsPublicRequest": {
           "properties": {
             "agent_ids": {
@@ -3665,7 +3737,7 @@
           "properties": {
             "api_keys": {
               "items": {
-                "$ref": "#/components/schemas/KeyActivityRow"
+                "$ref": "#/components/schemas/KeySpendActivityRow"
               },
               "title": "Api Keys",
               "type": "array"

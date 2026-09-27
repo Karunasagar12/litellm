@@ -124,6 +124,24 @@ class KeyActivityRow(BaseModel):
     metadata: KeyMetadata
 
 
+class KeySpendMetrics(BaseModel):
+    spend: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    api_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+
+
+class KeySpendActivityRow(BaseModel):
+    api_key: str
+    metrics: KeySpendMetrics
+    metadata: KeyMetadata
+
+
 class DailyActivityKeySearchResponse(BaseModel):
     api_keys: list[KeyActivityRow]
 
@@ -131,11 +149,11 @@ class DailyActivityKeySearchResponse(BaseModel):
 class ModelTopKeysResponse(BaseModel):
     model: str
     by_model_group: bool
-    api_keys: list[KeyActivityRow]
+    api_keys: list[KeySpendActivityRow]
 
 
 class CacheLeakageKeysResponse(BaseModel):
-    api_keys: list[KeyActivityRow]
+    api_keys: list[KeySpendActivityRow]
 
 
 class LiteLLM_DailyUserSpend(BaseModel):

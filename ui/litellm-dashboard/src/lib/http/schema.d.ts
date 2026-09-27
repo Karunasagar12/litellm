@@ -26942,7 +26942,7 @@ export interface components {
         /** CacheLeakageKeysResponse */
         CacheLeakageKeysResponse: {
             /** Api Keys */
-            api_keys: components["schemas"]["KeyActivityRow"][];
+            api_keys: components["schemas"]["KeySpendActivityRow"][];
         };
         /** CachePingResponse */
         CachePingResponse: {
@@ -32070,6 +32070,61 @@ export interface components {
             /** Keys */
             keys?: string[] | null;
         };
+        /** KeySpendActivityRow */
+        KeySpendActivityRow: {
+            /** Api Key */
+            api_key: string;
+            metadata: components["schemas"]["KeyMetadata"];
+            metrics: components["schemas"]["KeySpendMetrics"];
+        };
+        /** KeySpendMetrics */
+        KeySpendMetrics: {
+            /**
+             * Api Requests
+             * @default 0
+             */
+            api_requests: number;
+            /**
+             * Cache Creation Input Tokens
+             * @default 0
+             */
+            cache_creation_input_tokens: number;
+            /**
+             * Cache Read Input Tokens
+             * @default 0
+             */
+            cache_read_input_tokens: number;
+            /**
+             * Completion Tokens
+             * @default 0
+             */
+            completion_tokens: number;
+            /**
+             * Failed Requests
+             * @default 0
+             */
+            failed_requests: number;
+            /**
+             * Prompt Tokens
+             * @default 0
+             */
+            prompt_tokens: number;
+            /**
+             * Spend
+             * @default 0
+             */
+            spend: number;
+            /**
+             * Successful Requests
+             * @default 0
+             */
+            successful_requests: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+        };
         /**
          * KeyUpdateFields
          * @description Allowlist of bulk-broadcastable fields for /team/key/bulk_update; `extra="forbid"` blocks RBAC/ownership/scope mutations even by team admins.
@@ -36477,7 +36532,7 @@ export interface components {
         /** ModelTopKeysResponse */
         ModelTopKeysResponse: {
             /** Api Keys */
-            api_keys: components["schemas"]["KeyActivityRow"][];
+            api_keys: components["schemas"]["KeySpendActivityRow"][];
             /** By Model Group */
             by_model_group: boolean;
             /** Model */
