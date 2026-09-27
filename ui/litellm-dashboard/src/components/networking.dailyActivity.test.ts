@@ -175,11 +175,12 @@ describe("cacheLeakageKeysCall", () => {
   it("GETs the user cache_leakage_keys route with the user scope", async () => {
     const mockFetch = captureFetch();
 
-    await cacheLeakageKeysCall(req({ entityIds: ["u1"], apiKey: "hash-1" }));
+    await cacheLeakageKeysCall(req({ entityIds: ["u1"], apiKey: "hash-1", includeCurrentUtcDay: true }));
 
     const url = requestedUrl(mockFetch);
     expect(url.pathname).toBe("/user/daily/activity/aggregated/cache_leakage_keys");
     expect(url.searchParams.get("user_id")).toBe("u1");
     expect(url.searchParams.get("api_key")).toBe("hash-1");
+    expect(url.searchParams.get("include_current_utc_day")).toBe("true");
   });
 });

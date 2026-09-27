@@ -123,7 +123,9 @@ vi.mock("@/app/(dashboard)/hooks/users/useUsers", () => ({
 }));
 
 vi.mock("@/components/common_components/team_multi_select", () => ({
-  default: () => <div>Team Multi Select</div>,
+  default: ({ onChange }: { onChange: (value: string[]) => void }) => (
+    <button onClick={() => onChange(["team-1"])}>Team Multi Select</button>
+  ),
 }));
 
 // Mock useTeams hook
@@ -1210,6 +1212,28 @@ describe("EntityUsage", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText("$100.50").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("does not scope the agent breakdown by the selected team ids", async () => {
+    render(<EntityUsage {...defaultProps} entityType="team" />);
+
+    await waitFor(() => {
+      expect(mockTeamDailyActivityCall).toHaveBeenCalled();
+      expect(mockAgentDailyActivityCall).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Team Multi Select" }));
+
+    await waitFor(() => {
+      const teamRequests = mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "team");
+      expect(teamRequests.some((call) => call[1].entityIds?.includes("team-1"))).toBe(true);
+    });
+
+    const agentRequests = mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "agent");
+    expect(agentRequests.length).toBeGreaterThan(0);
+    agentRequests.forEach((call) => {
+      expect(call[1].entityIds).toBeNull();
     });
   });
 

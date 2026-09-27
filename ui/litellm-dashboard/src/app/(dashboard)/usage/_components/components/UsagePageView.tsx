@@ -411,6 +411,16 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
     [userSpendData, teams],
   );
 
+  const fetchTopApiKeys = useCallback(
+    (model: string) =>
+      ENTITY_API.user.modelTopKeys(dailyActivityRequest as DailyActivityRequest, model, modelViewType === "groups"),
+    [dailyActivityRequest, modelViewType],
+  );
+  const searchKeys = useCallback(
+    (query: string) => ENTITY_API.user.searchKeys(dailyActivityRequest as DailyActivityRequest, query),
+    [dailyActivityRequest],
+  );
+
   return (
     <div style={{ width: "100%" }} className="p-8 relative">
       {/* Global Date Picker and Tabs - Single Row */}
@@ -828,12 +838,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                   </div>
                   <ActivityMetrics
                     modelMetrics={modelMetrics}
-                    fetchTopApiKeys={
-                      dailyActivityRequest
-                        ? (model) =>
-                            ENTITY_API.user.modelTopKeys(dailyActivityRequest, model, modelViewType === "groups")
-                        : undefined
-                    }
+                    fetchTopApiKeys={dailyActivityRequest ? fetchTopApiKeys : undefined}
                   />
                 </TabsContent>
                 <TabsContent value="keys" keepMounted>
@@ -841,11 +846,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     keyMetrics={keyMetrics}
                     apiKeyTruncation={apiKeyTruncation}
                     teams={teams}
-                    searchKeys={
-                      dailyActivityRequest
-                        ? (query) => ENTITY_API.user.searchKeys(dailyActivityRequest, query)
-                        : undefined
-                    }
+                    searchKeys={dailyActivityRequest ? searchKeys : undefined}
                   />
                 </TabsContent>
                 <TabsContent value="mcp" keepMounted>

@@ -19,7 +19,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Alert, AlertDescription } from "@/components/shared/Alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import React, { type ReactNode, useMemo, useState } from "react";
+import React, { type ReactNode, useCallback, useMemo, useState } from "react";
 import TeamMultiSelect from "@/components/common_components/team_multi_select";
 import UserDropdown from "@/components/common_components/UserDropdown";
 import { ActivityMetrics, processActivityData } from "@/components/activity_metrics";
@@ -120,6 +120,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     [hasRequestWindow, accessToken, startTime, endTime, selectedTags],
   );
 
+  const agentRequest = useMemo(() => (request ? { ...request, entityIds: null } : null), [request]);
+
   const { data: spendDataRaw, failed } = useAggregatedDailyActivity({
     fetch: () => api.aggregated(request as DailyActivityRequest),
     enabled: enabled && request !== null,
@@ -136,8 +138,8 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
   const apiKeyTruncation = getApiKeyTruncation(spendData.metadata?.api_key_limit, spendData.metadata?.total_api_keys);
 
   const { data: agentSpendDataRaw, failed: agentFailed } = useAggregatedDailyActivity({
-    fetch: () => ENTITY_API.agent.aggregated(request as DailyActivityRequest),
-    enabled: enabled && showAgentBreakdown && request !== null,
+    fetch: () => ENTITY_API.agent.aggregated(agentRequest as DailyActivityRequest),
+    enabled: enabled && showAgentBreakdown && agentRequest !== null,
     deps: [accessToken, startTime, endTime, showAgentBreakdown],
   });
 
@@ -147,6 +149,19 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
       metadata: agentSpendDataRaw.metadata ?? EMPTY_DAILY_ACTIVITY_METADATA,
     }),
     [agentSpendDataRaw],
+  );
+
+  const fetchTopApiKeys = useCallback(
+    (model: string) => api.modelTopKeys(request as DailyActivityRequest, model, modelViewType === "groups"),
+    [api, request, modelViewType],
+  );
+  const fetchAgentTopApiKeys = useCallback(
+    (model: string) => ENTITY_API.agent.modelTopKeys(agentRequest as DailyActivityRequest, model, true),
+    [agentRequest],
+  );
+  const searchKeys = useCallback(
+    (query: string) => api.searchKeys(request as DailyActivityRequest, query),
+    [api, request],
   );
 
   const modelBreakdownKey = modelViewType === "groups" ? "model_groups" : "models";
@@ -625,9 +640,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
           <ActivityMetrics
             modelMetrics={modelMetrics}
             hidePromptCachingMetrics={entityType === "agent"}
-            fetchTopApiKeys={
-              request ? (model) => api.modelTopKeys(request, model, modelViewType === "groups") : undefined
-            }
+            fetchTopApiKeys={request ? fetchTopApiKeys : undefined}
           />
         </>
       ),
@@ -640,7 +653,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
             content: (
               <ActivityMetrics
                 modelMetrics={agentMetrics}
-                fetchTopApiKeys={request ? (model) => ENTITY_API.agent.modelTopKeys(request, model, true) : undefined}
+                fetchTopApiKeys={agentRequest ? fetchAgentTopApiKeys : undefined}
               />
             ),
           },
@@ -655,7 +668,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
           hidePromptCachingMetrics={entityType === "agent"}
           apiKeyTruncation={apiKeyTruncation}
           teams={teams ?? []}
-          searchKeys={request ? (query) => api.searchKeys(request, query) : undefined}
+          searchKeys={request ? searchKeys : undefined}
         />
       ),
     },

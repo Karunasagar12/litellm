@@ -114,6 +114,10 @@ const CacheLeakageCard: React.FC<CacheLeakageCardProps> = ({ activity }) => {
   const subject = dimension === "model" ? "Models" : "Keys";
   const firstColumn = dimension === "model" ? "Model" : "Key";
   const emptyNoun = dimension === "model" ? "model" : "key";
+  const emptyMessage =
+    dimension === "key" && keyLeakage.failed
+      ? "Could not load key usage for this range."
+      : `No ${emptyNoun} usage in this range.`;
 
   return (
     <TooltipProvider delay={300}>
@@ -139,7 +143,7 @@ const CacheLeakageCard: React.FC<CacheLeakageCardProps> = ({ activity }) => {
         <CardContent>
           {rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {rowsLoading ? "Loading..." : `No ${emptyNoun} usage in this range.`}
+              {rowsLoading ? "Loading..." : emptyMessage}
             </p>
           ) : (
             <Table>

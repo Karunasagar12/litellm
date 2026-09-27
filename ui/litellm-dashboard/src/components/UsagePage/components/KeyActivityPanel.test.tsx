@@ -4,15 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelActivityData } from "../types";
 import KeyActivityPanel from "./KeyActivityPanel";
 
+const renderedMetrics = vi.hoisted(() => ({ current: {} as Record<string, ModelActivityData> }));
+
 vi.mock("@/components/activity_metrics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/activity_metrics")>()),
-  ActivityMetrics: ({ modelMetrics }: { modelMetrics: Record<string, ModelActivityData> }) => (
-    <ul data-testid="rendered-keys">
-      {Object.keys(modelMetrics).map((hash) => (
-        <li key={hash}>{hash}</li>
-      ))}
-    </ul>
-  ),
+  ActivityMetrics: ({ modelMetrics }: { modelMetrics: Record<string, ModelActivityData> }) => {
+    renderedMetrics.current = modelMetrics;
+    return (
+      <ul data-testid="rendered-keys">
+        {Object.keys(modelMetrics).map((hash) => (
+          <li key={hash}>{hash}</li>
+        ))}
+      </ul>
+    );
+  },
 }));
 
 function activity(label: string, user_email: string | null, user_id: string | null): ModelActivityData {
@@ -157,6 +162,104 @@ describe("KeyActivityPanel", () => {
 
       expect(searchKeys).toHaveBeenCalledWith("carol");
       expect(screen.getByTestId("rendered-keys")).toHaveTextContent("hash-carol");
+    });
+
+    it("drops results from a previous scope and searches again when searchKeys changes", async () => {
+      const remoteRow = {
+        api_key: "hash-carol",
+        metrics: {
+          spend: 0.5,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          api_requests: 0,
+          successful_requests: 0,
+          failed_requests: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+        metadata: { key_alias: "carol-key", team_id: null },
+      };
+      const firstSearchKeys = vi.fn().mockResolvedValue({ api_keys: [remoteRow] });
+      const secondSearchKeys = vi.fn().mockResolvedValue({ api_keys: [] });
+      const { rerender } = render(<KeyActivityPanel keyMetrics={keyMetrics} {...remoteSearchProps(firstSearchKeys)} />);
+
+      fireEvent.change(screen.getByLabelText("Search keys"), { target: { value: "carol" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(screen.getByTestId("rendered-keys")).toHaveTextContent("hash-carol");
+
+      rerender(<KeyActivityPanel keyMetrics={keyMetrics} {...remoteSearchProps(secondSearchKeys)} />);
+
+      expect(screen.getByText("Searching...")).toBeInTheDocument();
+      expect(screen.queryByTestId("rendered-keys")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(secondSearchKeys).toHaveBeenCalledWith("carol");
+      expect(screen.queryByText("Searching...")).not.toBeInTheDocument();
+      expect(screen.getByText('No keys match "carol" in this date range')).toBeInTheDocument();
+    });
+
+    it("keeps local daily history and top models for a key the remote search also returns", async () => {
+      const localDailyData = [
+        {
+          date: "2026-09-27",
+          metrics: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            api_requests: 0,
+            spend: 1.5,
+            successful_requests: 0,
+            failed_requests: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      ];
+      const localTopModels = [
+        { model: "gpt-4o-mini", spend: 1.5, requests: 1, successful_requests: 1, failed_requests: 0, tokens: 10 },
+      ];
+      const localMetrics: Record<string, ModelActivityData> = {
+        "hash-alice": {
+          ...activity("alice-key", "alice@example.com", "user-alice"),
+          daily_data: localDailyData,
+          top_models: localTopModels,
+        },
+      };
+      const searchKeys = vi.fn().mockResolvedValue({
+        api_keys: [
+          {
+            api_key: "hash-alice",
+            metrics: {
+              spend: 99,
+              prompt_tokens: 0,
+              completion_tokens: 0,
+              total_tokens: 0,
+              api_requests: 0,
+              successful_requests: 0,
+              failed_requests: 0,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+            metadata: { key_alias: "alice-key", team_id: "team-1" },
+          },
+        ],
+      });
+      render(<KeyActivityPanel keyMetrics={localMetrics} {...remoteSearchProps(searchKeys)} />);
+
+      fireEvent.change(screen.getByLabelText("Search keys"), { target: { value: "alice" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(searchKeys).toHaveBeenCalledWith("alice");
+      expect(renderedMetrics.current["hash-alice"].daily_data).toBe(localDailyData);
+      expect(renderedMetrics.current["hash-alice"].top_models).toBe(localTopModels);
+      expect(renderedMetrics.current["hash-alice"].total_spend).toBe(0.01);
     });
   });
 });

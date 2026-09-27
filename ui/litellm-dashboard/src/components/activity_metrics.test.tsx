@@ -291,6 +291,38 @@ describe("ActivityMetrics", () => {
     expect(fetchTopApiKeys).toHaveBeenCalledTimes(1);
   });
 
+  it("refetches and shows loading again when the fetcher identity changes on an expanded model", async () => {
+    const firstFetch = vi.fn().mockResolvedValue({
+      api_keys: [
+        {
+          api_key: "key-old",
+          metrics: { ...EMPTY_SPEND_METRICS, spend: 10, api_requests: 5, total_tokens: 100 },
+          metadata: { key_alias: "Old Scope Key", team_id: null },
+        },
+      ],
+    });
+    const secondFetch = vi.fn().mockResolvedValue({
+      api_keys: [
+        {
+          api_key: "key-new",
+          metrics: { ...EMPTY_SPEND_METRICS, spend: 20, api_requests: 7, total_tokens: 200 },
+          metadata: { key_alias: "New Scope Key", team_id: null },
+        },
+      ],
+    });
+    const { rerender } = render(<ActivityMetrics modelMetrics={mockModelMetrics} fetchTopApiKeys={firstFetch} />);
+
+    expect(await screen.findByText("Old Scope Key")).toBeInTheDocument();
+    expect(firstFetch).toHaveBeenCalledWith("gpt-4");
+
+    rerender(<ActivityMetrics modelMetrics={mockModelMetrics} fetchTopApiKeys={secondFetch} />);
+
+    expect(screen.getByText("Loading top keys...")).toBeInTheDocument();
+    expect(screen.queryByText("Old Scope Key")).not.toBeInTheDocument();
+    expect(await screen.findByText("New Scope Key")).toBeInTheDocument();
+    expect(secondFetch).toHaveBeenCalledWith("gpt-4");
+  });
+
   it("hides the top keys section without a fetcher", () => {
     render(<ActivityMetrics modelMetrics={mockModelMetrics} />);
     expect(screen.queryByText("Top Virtual Keys by Spend")).not.toBeInTheDocument();

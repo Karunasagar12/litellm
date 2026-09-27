@@ -30,9 +30,11 @@ const KeyActivityPanel: React.FC<KeyActivityPanelProps> = ({
   searchKeys,
 }) => {
   const [query, setQuery] = useState("");
-  const [searchResult, setSearchResult] = useState<{ term: string; metrics: Record<string, ModelActivityData> } | null>(
-    null,
-  );
+  const [searchResult, setSearchResult] = useState<{
+    term: string;
+    searchKeys: NonNullable<KeyActivityPanelProps["searchKeys"]>;
+    metrics: Record<string, ModelActivityData>;
+  } | null>(null);
   const searchIdRef = useRef(0);
 
   const localFiltered = useMemo(() => filterKeyActivity(keyMetrics, query), [keyMetrics, query]);
@@ -48,22 +50,27 @@ const KeyActivityPanel: React.FC<KeyActivityPanelProps> = ({
       searchKeys(searchTerm)
         .then((response) => {
           if (searchIdRef.current !== searchId) return;
-          setSearchResult({ term: searchTerm, metrics: keyActivityRowsToMetrics(response.api_keys, teams) });
+          setSearchResult({
+            term: searchTerm,
+            searchKeys,
+            metrics: keyActivityRowsToMetrics(response.api_keys, teams),
+          });
         })
         .catch((error) => {
           if (searchIdRef.current !== searchId) return;
           console.error("Key activity search failed:", error);
-          setSearchResult({ term: searchTerm, metrics: {} });
+          setSearchResult({ term: searchTerm, searchKeys, metrics: {} });
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- teams is stable per parent render
   }, [searchTerm, searchKeys]);
 
-  const searching = searchTerm !== null && searchResult?.term !== searchTerm;
-  const remoteMetrics = searchResult?.term === searchTerm ? searchResult.metrics : {};
+  const isCurrentResult = searchResult?.term === searchTerm && searchResult?.searchKeys === searchKeys;
+  const searching = searchTerm !== null && !isCurrentResult;
+  const remoteMetrics = isCurrentResult ? searchResult.metrics : {};
 
-  const filtered = useMemo(() => ({ ...localFiltered, ...remoteMetrics }), [localFiltered, remoteMetrics]);
+  const filtered = useMemo(() => ({ ...remoteMetrics, ...localFiltered }), [localFiltered, remoteMetrics]);
 
   const totalKeys = Object.keys(keyMetrics).length;
   const shownKeys = Object.keys(filtered).length;

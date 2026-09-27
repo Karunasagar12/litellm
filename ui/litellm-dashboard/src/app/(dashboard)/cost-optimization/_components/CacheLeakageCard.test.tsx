@@ -125,7 +125,7 @@ describe("CacheLeakageCard", () => {
 
     await screen.findByText("No key usage in this range.");
     expect(mockCacheLeakageKeysCall).toHaveBeenCalledWith(
-      expect.objectContaining({ entityIds: ["u1"], apiKey: "hash-1" }),
+      expect.objectContaining({ entityIds: ["u1"], apiKey: "hash-1", includeCurrentUtcDay: true }),
     );
   });
 
@@ -177,6 +177,14 @@ describe("CacheLeakageCard", () => {
 
     expect(await screen.findByText("No key usage in this range.")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("reports a load failure instead of claiming the range is empty", async () => {
+    mockCacheLeakageKeysCall.mockRejectedValue(new Error("route unavailable"));
+    renderWith([]);
+
+    expect(await screen.findByText("Could not load key usage for this range.")).toBeInTheDocument();
+    expect(screen.queryByText("No key usage in this range.")).not.toBeInTheDocument();
   });
 
   it("shows a loading state while the key ranking is in flight", () => {

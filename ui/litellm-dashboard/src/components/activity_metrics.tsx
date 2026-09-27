@@ -54,20 +54,21 @@ const ModelTopKeys = ({
     requests: number;
     tokens: number;
   }
-  const [rows, setRows] = useState<ModelTopKeyRow[] | null>(null);
-  const fetchRef = React.useRef(fetchTopApiKeys);
-  React.useEffect(() => {
-    fetchRef.current = fetchTopApiKeys;
-  });
+  const [settled, setSettled] = useState<{
+    modelName: string;
+    fetchTopApiKeys: (model: string) => Promise<ModelTopKeysResponse>;
+    rows: ModelTopKeyRow[];
+  } | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
-    fetchRef
-      .current(modelName)
+    fetchTopApiKeys(modelName)
       .then((response) => {
         if (cancelled) return;
-        setRows(
-          response.api_keys.map((row) => ({
+        setSettled({
+          modelName,
+          fetchTopApiKeys,
+          rows: response.api_keys.map((row) => ({
             api_key: row.api_key,
             key_alias: row.metadata.key_alias ?? null,
             team_id: row.metadata.team_id ?? null,
@@ -75,17 +76,19 @@ const ModelTopKeys = ({
             requests: row.metrics.api_requests,
             tokens: row.metrics.total_tokens,
           })),
-        );
+        });
       })
       .catch((error) => {
         if (cancelled) return;
         console.error(`Failed to fetch top keys for ${modelName}:`, error);
-        setRows([]);
+        setSettled({ modelName, fetchTopApiKeys, rows: [] });
       });
     return () => {
       cancelled = true;
     };
-  }, [modelName]);
+  }, [modelName, fetchTopApiKeys]);
+
+  const rows = settled?.modelName === modelName && settled.fetchTopApiKeys === fetchTopApiKeys ? settled.rows : null;
 
   if (rows === null) {
     return (
