@@ -116,7 +116,13 @@ export const netSavingsPerCachedToken = (results: readonly DailyData[]): number 
 
 const toLeakageRow = (
   id: string,
-  a: { alias: string | null; teamId: string | null; promptTokens: number; cacheReadTokens: number; cacheCreationTokens: number },
+  a: {
+    alias: string | null;
+    teamId: string | null;
+    promptTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  },
   rate: number | null,
   dimension: CacheLeakageDimension,
 ): CacheLeakageRow => {

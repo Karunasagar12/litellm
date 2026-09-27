@@ -11,8 +11,7 @@ export const exportFilename = (
   exportType: ExportType,
   format: ExportFormat,
   dateRange: DateRangePickerValue,
-): string =>
-  `${entityType}_usage_${exportType}_${fileDay(dateRange.from)}_${fileDay(dateRange.to)}.${format}`;
+): string => `${entityType}_usage_${exportType}_${fileDay(dateRange.from)}_${fileDay(dateRange.to)}.${format}`;
 
 export const downloadBlob = (blob: Blob, filename: string): void => {
   const url = window.URL.createObjectURL(blob);

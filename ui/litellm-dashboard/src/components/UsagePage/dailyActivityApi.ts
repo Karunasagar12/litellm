@@ -1,11 +1,5 @@
 import type { components } from "@/lib/http/schema";
-import type {
-  BreakdownMetrics,
-  DailyData,
-  KeyMetadata,
-  KeyMetricWithMetadata,
-  MetricWithMetadata,
-} from "./types";
+import type { BreakdownMetrics, DailyData, KeyMetadata, KeyMetricWithMetadata, MetricWithMetadata } from "./types";
 
 export type DailyActivityEntity = "user" | "team" | "tag" | "organization" | "customer" | "agent";
 export type DailyActivityAggregatedResponse = components["schemas"]["SpendAnalyticsPaginatedResponse"];
@@ -65,9 +59,7 @@ const toKeyMetric = (entry: SchemaKeyMetricWithMetadata): KeyMetricWithMetadata 
   metadata: toKeyMetadata(entry.metadata),
 });
 
-export const toKeyMetadata = (
-  metadata: components["schemas"]["KeyMetadata"] | undefined,
-): KeyMetadata => ({
+export const toKeyMetadata = (metadata: components["schemas"]["KeyMetadata"] | undefined): KeyMetadata => ({
   key_alias: metadata?.key_alias ?? null,
   team_id: metadata?.team_id ?? null,
   user_id: metadata?.user_id,

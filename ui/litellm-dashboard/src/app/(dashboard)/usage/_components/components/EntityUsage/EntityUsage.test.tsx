@@ -446,11 +446,12 @@ describe("EntityUsage", () => {
 
   beforeEach(() => {
     mockDailyActivityAggregatedCall.mockReset();
-    mockDailyActivityAggregatedCall.mockImplementation(
-      (entity, request) =>
-        (entityMocks[entity] as unknown as (req: typeof request) => ReturnType<typeof networking.dailyActivityAggregatedCall>)(
-          request,
-        ),
+    mockDailyActivityAggregatedCall.mockImplementation((entity, request) =>
+      (
+        entityMocks[entity] as unknown as (
+          req: typeof request,
+        ) => ReturnType<typeof networking.dailyActivityAggregatedCall>
+      )(request),
     );
     Object.values(entityMocks).forEach((mock) => mock.mockClear());
     mockTagDailyActivityCall.mockResolvedValue(mockSpendData);
@@ -940,9 +941,7 @@ describe("EntityUsage", () => {
     render(<EntityUsage {...defaultProps} entityType="team" />);
 
     await waitFor(() => {
-      expect(mockAgentDailyActivityCall).toHaveBeenCalledWith(
-        expect.objectContaining({ accessToken: "test-token" }),
-      );
+      expect(mockAgentDailyActivityCall).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "test-token" }));
     });
   });
 

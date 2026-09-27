@@ -378,9 +378,7 @@ describe("UsagePage", () => {
     mockUserDailyActivityAggregatedCall.mockClear();
     mockDailyActivityAggregatedCall.mockReset();
     mockDailyActivityAggregatedCall.mockImplementation((entity: string, request: unknown) =>
-      entity === "user"
-        ? mockUserDailyActivityAggregatedCall(request)
-        : Promise.resolve({ results: [], metadata: {} }),
+      entity === "user" ? mockUserDailyActivityAggregatedCall(request) : Promise.resolve({ results: [], metadata: {} }),
     );
     mockTagListCall.mockClear();
     mockGatewayDailyActivityCall.mockClear();

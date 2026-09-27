@@ -101,10 +101,7 @@ const CacheLeakageCard: React.FC<CacheLeakageCardProps> = ({ activity }) => {
         : computeCacheLeakage(results, "model").rows,
     [dimension, keyLeakage.rows, leakageRate, results],
   );
-  const rows = useMemo(
-    () => [...unsortedRows].sort((a, b) => compareRows(a, b, sort)),
-    [unsortedRows, sort],
-  );
+  const rows = useMemo(() => [...unsortedRows].sort((a, b) => compareRows(a, b, sort)), [unsortedRows, sort]);
   const rowsLoading = dimension === "key" ? keyLeakage.loading : loading;
 
   const onSort = (column: SortColumn) =>

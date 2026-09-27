@@ -1,7 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { EMPTY_DAILY_ACTIVITY_METADATA, type DailyActivityAggregatedResponse } from "@/components/UsagePage/dailyActivityApi";
+import {
+  EMPTY_DAILY_ACTIVITY_METADATA,
+  type DailyActivityAggregatedResponse,
+} from "@/components/UsagePage/dailyActivityApi";
 import { useAggregatedDailyActivity } from "./useAggregatedDailyActivity";
 
 const response = (spend: number): DailyActivityAggregatedResponse => ({

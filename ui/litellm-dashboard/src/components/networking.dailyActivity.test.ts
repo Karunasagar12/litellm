@@ -89,20 +89,14 @@ describe("dailyActivityAggregatedCall", () => {
     expect(requestedUrl(mockFetch).searchParams.get(param)).toBe("litellm-dashboard,other");
   });
 
-  it.each<[DailyActivityEntity]>([["tag"], ["user"]])(
-    "emits no exclude param for %s",
-    async (entity) => {
-      const mockFetch = captureFetch();
+  it.each<[DailyActivityEntity]>([["tag"], ["user"]])("emits no exclude param for %s", async (entity) => {
+    const mockFetch = captureFetch();
 
-      await dailyActivityAggregatedCall(
-        entity,
-        req({ entityIds: ["e1"], excludeEntityIds: ["litellm-dashboard"] }),
-      );
+    await dailyActivityAggregatedCall(entity, req({ entityIds: ["e1"], excludeEntityIds: ["litellm-dashboard"] }));
 
-      const params = [...requestedUrl(mockFetch).searchParams.keys()];
-      expect(params.some((key) => key.startsWith("exclude_"))).toBe(false);
-    },
-  );
+    const params = [...requestedUrl(mockFetch).searchParams.keys()];
+    expect(params.some((key) => key.startsWith("exclude_"))).toBe(false);
+  });
 
   it("keeps an empty api_key as a filter rather than widening the read", async () => {
     const mockFetch = captureFetch();

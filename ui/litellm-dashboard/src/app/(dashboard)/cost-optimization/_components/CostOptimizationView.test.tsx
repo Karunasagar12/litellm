@@ -11,9 +11,7 @@ vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({
 
 vi.mock("@/components/networking", () => ({
   organizationListCall: vi.fn().mockResolvedValue([]),
-  dailyActivityAggregatedCall: vi
-    .fn()
-    .mockResolvedValue({ results: [], metadata: {} }),
+  dailyActivityAggregatedCall: vi.fn().mockResolvedValue({ results: [], metadata: {} }),
 }));
 
 vi.mock("./UsageTab", () => ({ __esModule: true, default: () => <div data-testid="usage-tab" /> }));

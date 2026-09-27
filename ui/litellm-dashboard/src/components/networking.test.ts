@@ -157,7 +157,6 @@ describe("modelInfoCall", () => {
   });
 });
 
-
 describe("UI config and public endpoints", () => {
   const originalFetch = global.fetch;
 

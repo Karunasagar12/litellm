@@ -63,10 +63,7 @@ const KeyActivityPanel: React.FC<KeyActivityPanelProps> = ({
   const searching = searchTerm !== null && searchResult?.term !== searchTerm;
   const remoteMetrics = searchResult?.term === searchTerm ? searchResult.metrics : {};
 
-  const filtered = useMemo(
-    () => ({ ...localFiltered, ...remoteMetrics }),
-    [localFiltered, remoteMetrics],
-  );
+  const filtered = useMemo(() => ({ ...localFiltered, ...remoteMetrics }), [localFiltered, remoteMetrics]);
 
   const totalKeys = Object.keys(keyMetrics).length;
   const shownKeys = Object.keys(filtered).length;
@@ -94,9 +91,7 @@ const KeyActivityPanel: React.FC<KeyActivityPanelProps> = ({
           )}
         </InputGroup>
         <span className="text-sm text-muted-foreground">
-          {searching
-            ? "Searching..."
-            : `Showing ${shownKeys.toLocaleString()} of ${totalKeys.toLocaleString()} keys`}
+          {searching ? "Searching..." : `Showing ${shownKeys.toLocaleString()} of ${totalKeys.toLocaleString()} keys`}
         </span>
         {apiKeyTruncation !== undefined && (
           <span className="text-sm text-muted-foreground" role="note">

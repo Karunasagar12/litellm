@@ -129,9 +129,7 @@ describe("createApiClient", () => {
     const fetchImpl = vi.fn(async () => errorResponse(500, { error: "export failed" }));
     const client = createApiClient({ getBaseUrl: () => "", fetchImpl });
 
-    await expect(client.getBlob("/user/daily/activity/export", { accessToken: "sk" })).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    await expect(client.getBlob("/user/daily/activity/export", { accessToken: "sk" })).rejects.toBeInstanceOf(ApiError);
   });
 
   it("resolves the global fetch per call, so a swap after construction takes effect", async () => {

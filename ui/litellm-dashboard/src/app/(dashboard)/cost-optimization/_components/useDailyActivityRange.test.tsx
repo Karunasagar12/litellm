@@ -60,10 +60,7 @@ describe("useDailyActivityRange", () => {
     renderHook(() => useDailyActivityRange("test-token", "u1", "internal_user"));
 
     await lastOptions().fetch();
-    expect(dailyActivityAggregatedCall).toHaveBeenCalledWith(
-      "user",
-      expect.objectContaining({ entityIds: ["u1"] }),
-    );
+    expect(dailyActivityAggregatedCall).toHaveBeenCalledWith("user", expect.objectContaining({ entityIds: ["u1"] }));
   });
 
   it.each(["org_admin", "Org Admin"])(
@@ -72,10 +69,7 @@ describe("useDailyActivityRange", () => {
       renderHook(() => useDailyActivityRange("test-token", "u1", role));
 
       await lastOptions().fetch();
-      expect(dailyActivityAggregatedCall).toHaveBeenCalledWith(
-        "user",
-        expect.objectContaining({ entityIds: ["u1"] }),
-      );
+      expect(dailyActivityAggregatedCall).toHaveBeenCalledWith("user", expect.objectContaining({ entityIds: ["u1"] }));
     },
   );
 

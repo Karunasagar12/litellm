@@ -640,9 +640,7 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
             content: (
               <ActivityMetrics
                 modelMetrics={agentMetrics}
-                fetchTopApiKeys={
-                  request ? (model) => ENTITY_API.agent.modelTopKeys(request, model, true) : undefined
-                }
+                fetchTopApiKeys={request ? (model) => ENTITY_API.agent.modelTopKeys(request, model, true) : undefined}
               />
             ),
           },

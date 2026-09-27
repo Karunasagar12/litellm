@@ -429,8 +429,8 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
           {aggregatedFailed && (
             <Alert variant="error" className="mb-2">
               <AlertDescription className="text-inherit">
-                Fetching spend data failed, so the totals below may be empty rather than final. Reload the page to
-                try again.
+                Fetching spend data failed, so the totals below may be empty rather than final. Reload the page to try
+                again.
               </AlertDescription>
             </Alert>
           )}
@@ -842,7 +842,9 @@ const UsagePage: React.FC<UsagePageProps> = ({ teams, organizations }) => {
                     apiKeyTruncation={apiKeyTruncation}
                     teams={teams}
                     searchKeys={
-                      dailyActivityRequest ? (query) => ENTITY_API.user.searchKeys(dailyActivityRequest, query) : undefined
+                      dailyActivityRequest
+                        ? (query) => ENTITY_API.user.searchKeys(dailyActivityRequest, query)
+                        : undefined
                     }
                   />
                 </TabsContent>

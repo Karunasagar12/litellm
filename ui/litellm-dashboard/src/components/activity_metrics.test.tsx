@@ -1069,7 +1069,6 @@ describe("processActivityData", () => {
     };
 
     const result = processActivityData(dailyActivityWithBreakdown, "models");
-
   });
 
   it("should return empty object when results array is empty", () => {
@@ -1186,7 +1185,6 @@ describe("processActivityData", () => {
     };
 
     const result = processActivityData(dailyActivityWithBreakdown, "api_keys", MOCK_TEAMS);
-
   });
 
   it("should handle missing cache tokens gracefully", () => {
