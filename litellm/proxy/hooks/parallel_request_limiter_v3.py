@@ -1793,7 +1793,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         slot_id: Final = acquisition["slot_id"]
         if not counter_keys or not slot_id:
             return
-        if self._defer_parallel_slot_release(counter_keys, slot_id, parent_otel_span):
+        if await self._defer_parallel_slot_release(counter_keys, slot_id, parent_otel_span):
             return
         if self.parallel_release_script is not None:
             try:
@@ -1812,24 +1812,26 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 )
         await self._release_parallel_request_slots_in_memory(counter_keys, slot_id, parent_otel_span)
 
-    def _defer_parallel_slot_release(
+    async def _defer_parallel_slot_release(
         self, counter_keys: list[str], slot_id: str, parent_otel_span: Span | None
     ) -> bool:
+        """The local gauge frees the slot at once, so admission on this worker sees the capacity before the
+        pipeline goes out; the Redis count replaces it when the release settles."""
         redis_cache: Final = self.internal_usage_cache.dual_cache.redis_cache
         script: Final = self.parallel_release_script
         batch: Final = None if redis_cache is None else active_post_call_redis_batch(redis_cache)
         if batch is None or script is None:
             return False
+        await self._release_parallel_request_slots_in_memory(counter_keys, slot_id, parent_otel_span)
 
         async def settle(future: asyncio.Future[object]) -> None:
             if future.cancelled() or future.exception() is not None:
                 log_redis_failure(
                     verbose_proxy_logger,
                     logging.WARNING,
-                    "parallel_release_script failed, falling back to in-memory release",
+                    "parallel_release_script failed, the slot stays released in memory only",
                     future.exception() if not future.cancelled() else asyncio.CancelledError(),
                 )
-                await self._release_parallel_request_slots_in_memory(counter_keys, slot_id, parent_otel_span)
                 return
             raw: Final = future.result()
             if isinstance(raw, list):

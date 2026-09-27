@@ -19,6 +19,7 @@ from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_batch import (
     active_post_call_redis_batch,
     active_request_redis_batches,
+    drain_post_call_redis_batches,
     flush_post_call_redis_batches,
     request_redis_batch_scope,
 )
@@ -238,7 +239,7 @@ async def test_a_failed_slot_release_script_releases_the_slot_in_memory():
 
 
 @pytest.mark.asyncio
-async def test_a_released_slot_count_lands_in_memory_when_the_pipeline_settles():
+async def test_a_released_slot_is_free_locally_at_once_and_the_redis_count_replaces_it_when_the_pipeline_settles():
     def replies(command: tuple[Any, ...]) -> Any:
         if command[0] == "EVALSHA":
             return [2]
@@ -246,18 +247,17 @@ async def test_a_released_slot_count_lands_in_memory_when_the_pipeline_settles()
 
     redis_cache = PostCallFakeRedisCache(FakeClient(replies))
     limiter = _limiter(redis_cache)
+    memory = limiter.internal_usage_cache.dual_cache.in_memory_cache
+    await memory.async_set_cache("{api_key:k1}:parallel", {"slot-1": 1.0, "slot-2": 1.0, "slot-3": 1.0})
 
     with request_redis_batch_scope():
         await limiter._release_parallel_request_slots(
             ParallelSlotAcquisition(slot_id="slot-1", counter_keys=["{api_key:k1}:parallel"])
         )
-        assert (
-            await limiter.internal_usage_cache.dual_cache.in_memory_cache.async_get_cache("{api_key:k1}:parallel")
-            is None
-        )
+        assert await memory.async_get_cache("{api_key:k1}:parallel") == {"slot-2": 1.0, "slot-3": 1.0}
         await flush_post_call_redis_batches()
 
-    assert await limiter.internal_usage_cache.dual_cache.in_memory_cache.async_get_cache("{api_key:k1}:parallel") == 2
+    assert await memory.async_get_cache("{api_key:k1}:parallel") == 2
 
 
 @pytest.mark.asyncio
@@ -324,6 +324,38 @@ async def test_two_backends_get_one_post_call_pipeline_each():
 
     assert len(a_client.pipelines) == 1 and len(b_client.pipelines) == 1
     assert [c[1] for c in a_client.pipelines[0].commands if c[0] == "INCRBYFLOAT"] == ["x", "z"]
+
+
+@pytest.mark.asyncio
+async def test_a_numeric_string_ttl_reaches_redis_as_the_direct_path_would_send_it():
+    client = FakeClient(_ok_replies)
+    response_cache = _response_cache(PostCallFakeRedisCache(client))
+    kwargs = {"messages": [{"role": "user", "content": "hi"}], "model": "gpt", "ttl": "3600"}
+
+    with request_redis_batch_scope():
+        await response_cache.async_add_cache({"id": "resp"}, **kwargs)
+        await flush_post_call_redis_batches()
+
+    (command,) = client.pipelines[0].commands
+    assert (command[0], command[3]) == ("SET", 3600)
+
+
+@pytest.mark.asyncio
+async def test_post_call_writes_still_waiting_on_their_callbacks_are_drained_at_shutdown():
+    client = FakeClient(_ok_replies)
+    dual_cache = DualCache()
+    dual_cache.attach_redis_cache(PostCallFakeRedisCache(client))
+
+    with request_redis_batch_scope(post_call_deadline=60) as request:
+        await dual_cache.async_increment_cache_post_call("x", 1, ttl=None)
+        await request.flush_all()
+    assert client.pipelines == []
+
+    await drain_post_call_redis_batches()
+    assert len(client.pipelines) == 1 and _names(client) == ["INCRBYFLOAT"]
+
+    await drain_post_call_redis_batches()
+    assert len(client.pipelines) == 1
 
 
 @pytest.mark.asyncio

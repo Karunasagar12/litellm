@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import time
+import weakref
 from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
@@ -372,6 +373,10 @@ def _backend_key(redis_cache: RedisCache) -> object:
     return (type(redis_cache), settings)
 
 
+_open_post_call: Final[weakref.WeakSet[RequestRedisBatches]] = weakref.WeakSet()
+"""Requests whose post-call batch still holds declared ops, so a shutdown can send them before Redis goes away."""
+
+
 class RequestRedisBatches:
     """One ``RedisBatch`` per Redis backend for the current request, so readers of different caches that
     share a server (the proxy's and the router's) share the pipeline.
@@ -380,7 +385,15 @@ class RequestRedisBatches:
     They flush once, when the success or failure callbacks have all run, or at ``post_call_deadline``
     seconds after the first declaration when no callback phase closes them."""
 
-    __slots__ = ("_batches", "_deadline", "_deadline_flush", "_post_call", "post_call_deadline", "prefetched")
+    __slots__ = (
+        "__weakref__",
+        "_batches",
+        "_deadline",
+        "_deadline_flush",
+        "_post_call",
+        "post_call_deadline",
+        "prefetched",
+    )
 
     def __init__(self, post_call_deadline: float = POST_CALL_FLUSH_DEADLINE_SECONDS) -> None:
         self._batches: Final[dict[object, RedisBatch]] = {}  # mutable-ok: lazily filled per backend
@@ -407,6 +420,7 @@ class RequestRedisBatches:
             self._post_call[key] = batch
         if self._deadline is None:
             self._deadline = asyncio.get_running_loop().call_later(self.post_call_deadline, self._flush_on_deadline)
+        _open_post_call.add(self)
         return batch
 
     def _flush_on_deadline(self) -> None:
@@ -423,6 +437,8 @@ class RequestRedisBatches:
             self._deadline.cancel()
             self._deadline = None
         await asyncio.gather(*(batch.flush() for batch in self._post_call.values() if batch.pending))
+        if not any(batch.pending for batch in self._post_call.values()):
+            _open_post_call.discard(self)
 
     @property
     def batches(self) -> tuple[RedisBatch, ...]:
@@ -463,6 +479,11 @@ async def flush_post_call_redis_batches() -> None:
     batches: Final = _active_request_batches.get()
     if batches is not None:
         await batches.flush_post_call()
+
+
+async def drain_post_call_redis_batches() -> None:
+    """Sends every post-call batch still waiting on its callbacks or deadline; for the shutdown path."""
+    await asyncio.gather(*(batches.flush_post_call() for batches in tuple(_open_post_call)))
 
 
 class request_redis_batch_scope:

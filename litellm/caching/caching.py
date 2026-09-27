@@ -70,6 +70,16 @@ def print_verbose(print_statement):
         pass
 
 
+def _ttl_seconds(raw: object) -> int | None:
+    """Same coercion ``BaseCache.get_ttl`` applies to a caller's ``ttl`` kwarg; ``None`` means the cache default."""
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 class CacheMode(str, Enum):
     default_on = "default_on"
     default_off = "default_off"
@@ -785,8 +795,7 @@ class Cache:
         instead of its own round trip. Anything with SET options keeps the direct path."""
         if kwargs.get("nx"):
             return False
-        raw_ttl: Final = kwargs.get("ttl")
-        ttl: Final = raw_ttl if isinstance(raw_ttl, (int, float)) else None
+        ttl: Final = _ttl_seconds(kwargs.get("ttl"))
         if isinstance(dynamic_cache_object, DualCache):
             deferred: Final = await dynamic_cache_object.async_set_cache_post_call(cache_key, cached_data, ttl)
             if deferred is None:

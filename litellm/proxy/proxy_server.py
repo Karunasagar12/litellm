@@ -268,7 +268,11 @@ from litellm import Router
 from litellm._logging import _redact_string, verbose_proxy_logger, verbose_router_logger
 from litellm.caching.caching import DualCache, RedisCache
 from litellm.caching.dual_cache import DeclaredBatchRead
-from litellm.caching.redis_batch import active_post_call_redis_batch, active_request_redis_batches
+from litellm.caching.redis_batch import (
+    active_post_call_redis_batch,
+    active_request_redis_batches,
+    drain_post_call_redis_batches,
+)
 from litellm.caching.redis_cache import RedisCircuitBreakerOpenError, is_redis_timeout_failure
 from litellm.caching.redis_cluster_cache import RedisClusterCache
 from litellm.constants import (
@@ -1115,6 +1119,7 @@ async def proxy_shutdown_event(worker_heartbeat: ProxyWorkerHeartbeat | None = N
         verbose_proxy_logger.debug("Disconnecting from Prisma")
         await prisma_client.disconnect()
 
+    await drain_post_call_redis_batches()
     if litellm.cache is not None:
         await litellm.cache.disconnect()
 
