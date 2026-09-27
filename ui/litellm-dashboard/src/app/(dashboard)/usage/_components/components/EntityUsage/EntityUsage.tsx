@@ -120,7 +120,18 @@ const EntityUsage: React.FC<EntityUsageProps> = ({
     [hasRequestWindow, accessToken, startTime, endTime, selectedTags],
   );
 
-  const agentRequest = useMemo(() => (request ? { ...request, entityIds: null } : null), [request]);
+  const agentRequest = useMemo<DailyActivityRequest | null>(
+    () =>
+      hasRequestWindow
+        ? {
+            accessToken: accessToken as string,
+            startTime: startTime as Date,
+            endTime: endTime as Date,
+            entityIds: null,
+          }
+        : null,
+    [hasRequestWindow, accessToken, startTime, endTime],
+  );
 
   const { data: spendDataRaw, failed } = useAggregatedDailyActivity({
     fetch: () => api.aggregated(request as DailyActivityRequest),

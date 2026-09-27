@@ -1237,6 +1237,27 @@ describe("EntityUsage", () => {
     });
   });
 
+  it("does not refetch agent activity when the team selection changes", async () => {
+    render(<EntityUsage {...defaultProps} entityType="team" />);
+
+    await waitFor(() => {
+      expect(mockAgentDailyActivityCall).toHaveBeenCalled();
+    });
+    const agentCallsBefore = mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "agent").length;
+    const teamCallsBefore = mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "team").length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Team Multi Select" }));
+
+    await waitFor(() => {
+      expect(mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "team").length).toBeGreaterThan(
+        teamCallsBefore,
+      );
+    });
+    expect(mockDailyActivityAggregatedCall.mock.calls.filter((call) => call[0] === "agent")).toHaveLength(
+      agentCallsBefore,
+    );
+  });
+
   it("surfaces a failure alert when the aggregated call fails instead of retrying other routes", async () => {
     mockTeamDailyActivityCall.mockRejectedValue(new Error("aggregated unavailable"));
 
