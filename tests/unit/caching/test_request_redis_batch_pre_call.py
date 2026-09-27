@@ -20,6 +20,7 @@ from litellm.proxy.auth.auth_object_prefetch import _CacheEntry, _write_back
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     CHECK_AND_INCREMENT_BY_N_SCRIPT,
+    RateLimitDescriptor,
     _PROXY_MaxParallelRequestsHandler_v3,
 )
 from litellm.proxy.utils import InternalUsageCache
@@ -45,8 +46,12 @@ def _limiter(redis_cache: FakeRedisCache) -> _PROXY_MaxParallelRequestsHandler_v
     return limiter
 
 
-def _descriptor(key: str, value: str, rpm: int) -> dict[str, Any]:
+def _descriptor(key: str, value: str, rpm: int) -> RateLimitDescriptor:
     return {"key": key, "value": value, "rate_limit": {"requests_per_unit": rpm}}
+
+
+def _refunds(redis_cache: FakeRedisCache) -> list[tuple[str, float]]:
+    return [(op[1], op[2]) for op in redis_cache.alone if op[0] == "INCRBYFLOAT"]
 
 
 def _lua_ok_replies(command: tuple[Any, ...]) -> Any:
@@ -71,7 +76,7 @@ async def test_descriptor_lua_calls_share_one_pipeline_and_each_keeps_its_result
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
-            descriptors=descriptors,  # type: ignore[arg-type]
+            descriptors=descriptors,
             increments=[{"requests": 1}, {"requests": 1}, {"requests": 1}],
         )
 
@@ -92,23 +97,18 @@ async def test_an_over_limit_descriptor_in_the_pipeline_refunds_the_groups_that_
         return _lua_ok_replies(command)
 
     client = FakeClient(replies)
-    limiter = _limiter(FakeRedisCache(client))
-    refunded: list[list[str]] = []
-
-    async def _refund(applied):
-        refunded.append([m["counter_key"] for group in applied for m in group])
-
-    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+    redis_cache = FakeRedisCache(client)
+    limiter = _limiter(redis_cache)
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],
             increments=[{"requests": 1}, {"requests": 1}],
         )
 
     assert response["overall_code"] == "OVER_LIMIT"
     assert response["statuses"][0]["descriptor_key"] == "team"
-    assert refunded == [["{api_key:k1}:requests"]]
+    assert _refunds(redis_cache) == [("{api_key:k1}:requests", -1.0)]
     assert len(client.pipelines) == 1
 
 
@@ -120,13 +120,8 @@ async def test_an_over_limit_descriptor_also_refunds_the_groups_the_pipeline_inc
         return _lua_ok_replies(command)
 
     client = FakeClient(replies)
-    limiter = _limiter(FakeRedisCache(client))
-    refunded: list[list[str]] = []
-
-    async def _refund(applied):
-        refunded.append([m["counter_key"] for group in applied for m in group])
-
-    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+    redis_cache = FakeRedisCache(client)
+    limiter = _limiter(redis_cache)
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
@@ -134,13 +129,13 @@ async def test_an_over_limit_descriptor_also_refunds_the_groups_the_pipeline_inc
                 _descriptor("api_key", "k1", 10),
                 _descriptor("team", "t1", 20),
                 _descriptor("model_per_key", "k1:gpt", 5),
-            ],  # type: ignore[arg-type]
+            ],
             increments=[{"requests": 1}, {"requests": 1}, {"requests": 1}],
         )
 
     assert response["overall_code"] == "OVER_LIMIT"
     assert response["statuses"][0]["descriptor_key"] == "api_key"
-    assert refunded == [["{team:t1}:requests", "{model_per_key:k1:gpt}:requests"]]
+    assert _refunds(redis_cache) == [("{team:t1}:requests", -1.0), ("{model_per_key:k1:gpt}:requests", -1.0)]
     assert len(client.pipelines) == 1
 
 
@@ -154,13 +149,8 @@ async def test_a_redis_denial_stands_when_another_pipelined_group_fails():
         return _lua_ok_replies(command)
 
     client = FakeClient(replies)
-    limiter = _limiter(FakeRedisCache(client))
-    refunded: list[list[str]] = []
-
-    async def _refund(applied):
-        refunded.append([m["counter_key"] for group in applied for m in group])
-
-    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+    redis_cache = FakeRedisCache(client)
+    limiter = _limiter(redis_cache)
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
@@ -168,13 +158,13 @@ async def test_a_redis_denial_stands_when_another_pipelined_group_fails():
                 _descriptor("api_key", "k1", 10),
                 _descriptor("team", "t1", 20),
                 _descriptor("model_per_key", "k1:gpt", 5),
-            ],  # type: ignore[arg-type]
+            ],
             increments=[{"requests": 1}, {"requests": 1}, {"requests": 1}],
         )
 
     assert response["overall_code"] == "OVER_LIMIT"  # not the in-memory fallback's verdict
     assert response["statuses"][0]["descriptor_key"] == "api_key"
-    assert refunded == [["{model_per_key:k1:gpt}:requests"]]
+    assert _refunds(redis_cache) == [("{model_per_key:k1:gpt}:requests", -1.0)]
     assert len(client.pipelines) == 1
 
 
@@ -186,23 +176,18 @@ async def test_one_failed_lua_group_refunds_the_other_pipelined_groups_and_falls
         return _lua_ok_replies(command)
 
     client = FakeClient(replies)
-    limiter = _limiter(FakeRedisCache(client))
-    refunded: list[list[str]] = []
-
-    async def _refund(applied):
-        refunded.append([m["counter_key"] for group in applied for m in group])
-
-    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+    redis_cache = FakeRedisCache(client)
+    limiter = _limiter(redis_cache)
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],
             increments=[{"requests": 1}, {"requests": 1}],
         )
 
     assert response["overall_code"] == "OK"
     assert len(response["statuses"]) == 2  # in-memory enforcement covered both descriptors
-    assert refunded == [["{team:t1}:requests"]]
+    assert _refunds(redis_cache) == [("{team:t1}:requests", -1.0)]
     assert len(client.pipelines) == 1
 
 
@@ -213,7 +198,7 @@ async def test_a_pipeline_failure_refunds_nothing_and_falls_back_to_in_memory_en
 
     with request_redis_batch_scope():
         response = await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],
             increments=[{"requests": 1}, {"requests": 1}],
         )
 
@@ -229,7 +214,7 @@ async def test_without_a_request_scope_descriptor_groups_run_the_script_directly
     limiter.check_and_increment_by_n_script = AsyncMock(return_value=[0, 1, 1700000000])
 
     response = await limiter.atomic_check_and_increment_by_n(
-        descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+        descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],
         increments=[{"requests": 1}, {"requests": 1}],
     )
 
@@ -262,7 +247,7 @@ async def test_armed_routing_read_rides_the_admission_pipeline_and_routing_issue
     with request_redis_batch_scope():
         router.arm_routing_read_prefetch(_MODEL_GROUP, {})
         await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],
             increments=[{"requests": 1}, {"requests": 1}],
         )
         deployment = await router.async_get_available_deployment(
@@ -370,7 +355,7 @@ async def test_simple_shuffle_prefetches_only_its_cooldown_read_into_the_admissi
     with request_redis_batch_scope():
         router.arm_routing_read_prefetch(_MODEL_GROUP, {})
         await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10)],
             increments=[{"requests": 1}],
         )
         deployment = await router.async_get_available_deployment(
@@ -417,7 +402,7 @@ async def test_a_single_lua_group_rides_the_pipeline_with_the_armed_routing_read
     with request_redis_batch_scope():
         router.arm_routing_read_prefetch(_MODEL_GROUP, {})
         await limiter.atomic_check_and_increment_by_n(
-            descriptors=[_descriptor("api_key", "k1", 10)],  # type: ignore[arg-type]
+            descriptors=[_descriptor("api_key", "k1", 10)],
             increments=[{"requests": 1}],
         )
         await router.async_get_available_deployment(
@@ -483,9 +468,8 @@ async def test_auth_write_back_rides_the_next_round_trip_and_the_scope_drains_wh
 @pytest.mark.asyncio
 async def test_auth_write_back_outside_a_scope_writes_through_as_before():
     redis_cache = FakeRedisCache(FakeClient(_lua_ok_replies))
-    redis_cache.async_set_cache_pipeline_with_ttls = AsyncMock()  # type: ignore[method-assign]
     cache = UserApiKeyCache(redis_cache=redis_cache)
     await _write_back([_user_entry()], cache)
-    redis_cache.async_set_cache_pipeline_with_ttls.assert_awaited_once()
-    (payloads,), _ = redis_cache.async_set_cache_pipeline_with_ttls.await_args
-    assert [(key, ttl) for key, _value, ttl in payloads] == [("user-1", 42)]
+    assert [(op[0], [(key, ttl) for key, _value, ttl in op[1]]) for op in redis_cache.alone] == [
+        ("SET_PIPELINE", [("user-1", 42)])
+    ]

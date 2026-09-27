@@ -101,6 +101,11 @@ class FakeRedisCache(RedisCache):
         self.store[key] = float(self.store.get(key, 0.0)) + value
         return self.store[key]
 
+    async def async_set_cache_pipeline_with_ttls(self, cache_list: Sequence[tuple[str, object, float | None]]) -> None:
+        self.alone.append(("SET_PIPELINE", tuple(cache_list)))
+        for key, value, _ttl in cache_list:
+            self.store[key] = value
+
 
 class FakeClusterCache(RedisClusterCache, FakeRedisCache):
     def __init__(self, client: FakeClient) -> None:  # super().__init__ needs a server
