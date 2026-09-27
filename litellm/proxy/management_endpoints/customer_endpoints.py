@@ -42,6 +42,7 @@ from litellm.proxy.management_helpers.object_permission_utils import (
 )
 from litellm.proxy.utils import handle_exception_on_proxy
 from litellm.repositories.budget_repository import BudgetRepository
+from litellm.repositories.chunked_in import find_many_in
 from litellm.repositories.table_repositories import EndUserRepository
 from litellm.types.proxy.management_endpoints.common_daily_activity import (
     SpendAnalyticsPaginatedResponse,
@@ -501,10 +502,12 @@ async def resolve_customer_daily_activity_scope(
     end_user_ids: tuple[str, ...] | None,
     prisma_client: "PrismaClient",
 ) -> _CustomerDailyActivityScope:
-    where_condition: Final[Mapping[str, object]] = (
-        {"user_id": {"in": list(end_user_ids)}} if end_user_ids is not None else {}
+    end_user_table: Final = _typed_table(EndUserRepository(prisma_client))
+    end_user_aliases: Final = (
+        await find_many_in(end_user_table, "user_id", end_user_ids)
+        if end_user_ids is not None
+        else await end_user_table.find_many(where={})
     )
-    end_user_aliases: Final = await _typed_table(EndUserRepository(prisma_client)).find_many(where=where_condition)
     metadata: Final = MappingProxyType({end_user.user_id: {"alias": end_user.alias} for end_user in end_user_aliases})
     return _CustomerDailyActivityScope(end_user_ids, metadata)
 
