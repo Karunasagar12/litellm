@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -112,6 +113,66 @@ async def test_an_over_limit_descriptor_in_the_pipeline_refunds_the_groups_that_
 
 
 @pytest.mark.asyncio
+async def test_an_over_limit_descriptor_also_refunds_the_groups_the_pipeline_incremented_after_it():
+    def replies(command: tuple[Any, ...]) -> Any:
+        if command[0] == "EVALSHA" and command[3] == "{api_key:k1}:window":
+            return [1, 1, 11, 10]  # OVER_LIMIT on the first group; the later groups already incremented
+        return _lua_ok_replies(command)
+
+    client = FakeClient(replies)
+    limiter = _limiter(FakeRedisCache(client))
+    refunded: list[list[str]] = []
+
+    async def _refund(applied):
+        refunded.append([m["counter_key"] for group in applied for m in group])
+
+    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+
+    with request_redis_batch_scope():
+        response = await limiter.atomic_check_and_increment_by_n(
+            descriptors=[
+                _descriptor("api_key", "k1", 10),
+                _descriptor("team", "t1", 20),
+                _descriptor("model_per_key", "k1:gpt", 5),
+            ],  # type: ignore[arg-type]
+            increments=[{"requests": 1}, {"requests": 1}, {"requests": 1}],
+        )
+
+    assert response["overall_code"] == "OVER_LIMIT"
+    assert response["statuses"][0]["descriptor_key"] == "api_key"
+    assert refunded == [["{team:t1}:requests", "{model_per_key:k1:gpt}:requests"]]
+    assert len(client.pipelines) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failed_lua_group_refunds_the_other_pipelined_groups_and_falls_back_to_in_memory():
+    def replies(command: tuple[Any, ...]) -> Any:
+        if command[0] == "EVALSHA" and command[3] == "{api_key:k1}:window":
+            return ValueError("script blew up")
+        return _lua_ok_replies(command)
+
+    client = FakeClient(replies)
+    limiter = _limiter(FakeRedisCache(client))
+    refunded: list[list[str]] = []
+
+    async def _refund(applied):
+        refunded.append([m["counter_key"] for group in applied for m in group])
+
+    limiter._refund_applied_descriptor_groups = _refund  # type: ignore[method-assign]
+
+    with request_redis_batch_scope():
+        response = await limiter.atomic_check_and_increment_by_n(
+            descriptors=[_descriptor("api_key", "k1", 10), _descriptor("team", "t1", 20)],  # type: ignore[arg-type]
+            increments=[{"requests": 1}, {"requests": 1}],
+        )
+
+    assert response["overall_code"] == "OK"
+    assert len(response["statuses"]) == 2  # in-memory enforcement covered both descriptors
+    assert refunded == [["{team:t1}:requests"]]
+    assert len(client.pipelines) == 1
+
+
+@pytest.mark.asyncio
 async def test_a_pipeline_failure_refunds_nothing_and_falls_back_to_in_memory_enforcement():
     client = FakeClient(_lua_ok_replies, fail=ConnectionError("redis down"))
     limiter = _limiter(FakeRedisCache(client))
@@ -182,6 +243,43 @@ async def test_armed_routing_read_rides_the_admission_pipeline_and_routing_issue
     assert {CooldownCache.get_cooldown_cache_key("dep-a"), CooldownCache.get_cooldown_cache_key("dep-b")} <= mget_keys
     assert any(":tpm:" in key for key in mget_keys) and any(":rpm:" in key for key in mget_keys)
     assert redis_cache.alone == []
+
+
+@pytest.mark.asyncio
+async def test_a_cooldown_recorded_locally_after_the_prefetch_left_still_excludes_its_deployment():
+    expired = {"exception_received": "429", "status_code": "429", "timestamp": time.time() - 3600, "cooldown_time": 60}
+
+    def replies(command: tuple[Any, ...]) -> Any:
+        if command[0] == "MGET":  # Redis holds a stale cooldown for dep-b and nothing for dep-a
+            return [
+                json.dumps(expired) if key == CooldownCache.get_cooldown_cache_key("dep-b") else None
+                for key in command[1:]
+            ]
+        return _lua_ok_replies(command)
+
+    client = FakeClient(replies)
+    redis_cache = FakeRedisCache(client)
+    router = _router(redis_cache)
+    cooldown_store = router.cooldown_cache.cooldown_store
+    assert cooldown_store.in_memory_cache is not None
+
+    with request_redis_batch_scope():
+        router.arm_routing_read_prefetch(_MODEL_GROUP, {})
+        cooldown_store.in_memory_cache.set_cache(
+            CooldownCache.get_cooldown_cache_key("dep-a"),
+            {"exception_received": "429", "status_code": "429", "timestamp": time.time(), "cooldown_time": 60},
+        )
+        picks = {
+            (
+                await router.async_get_available_deployment(
+                    model=_MODEL_GROUP, messages=[{"role": "user", "content": "ping"}], request_kwargs={}
+                )
+            )["model_info"]["id"]
+            for _ in range(5)
+        }
+
+    assert picks == {"dep-b"}
+    assert len(client.pipelines) == 1
 
 
 @pytest.mark.asyncio

@@ -71,7 +71,10 @@ class _Op(Generic[_T]):
         """Resolve from pipeline replies; return a coroutine when the op has to be retried on its own."""
         failure: Final = next((reply for reply in replies if isinstance(reply, Exception)), None)
         if failure is None:
-            self.future.set_result(self.resolve(replies))
+            try:
+                self.future.set_result(self.resolve(replies))
+            except Exception as e:  # noqa: BLE001  # a reply this op cannot decode fails this op alone
+                self.future.set_exception(e)
             return None
         if _is_missing_script(failure):
             return self._settle_alone()

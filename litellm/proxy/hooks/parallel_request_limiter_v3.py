@@ -1982,22 +1982,20 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         reservation_windows: Final[set[ReservationWindowIdentity]] = set()  # mutable-ok: filled by the group loop
         raw: list[CacheCounterValue]
 
-        # Every descriptor's Lua call goes out in one pipeline when the request has a Redis batch open;
-        # each group still resolves and fails on its own, so the refund and fallback paths below are unchanged.
         pipelined: Final = self._pipeline_scripts(
             CHECK_AND_INCREMENT_BY_N_SCRIPT,
             self.check_and_increment_by_n_script,  # pyright: ignore[reportArgumentType]  # sole caller guards it is not None
             [(keys, args) for keys, args, _meta in descriptor_groups],
         )
-        for (keys, args, meta), group_result in zip(descriptor_groups, pipelined):
+        batched: Final = tuple(result for result in pipelined if result is not None)
+        if len(batched) == len(descriptor_groups):
+            return await self._settle_pipelined_descriptor_groups(descriptor_groups, batched, parent_otel_span)
+
+        for keys, args, meta in descriptor_groups:
             try:
-                raw = (
-                    await self.check_and_increment_by_n_script(  # pyright: ignore[reportOptionalCall]  # sole caller guards it is not None
-                        keys=keys,
-                        args=args,
-                    )
-                    if group_result is None
-                    else _as_counter_values(await group_result)
+                raw = await self.check_and_increment_by_n_script(  # pyright: ignore[reportOptionalCall]  # sole caller guards it is not None
+                    keys=keys,
+                    args=args,
                 )
             except Exception as e:
                 # Lua failure (timeout, OOM, network partition) leaves Redis
@@ -2035,6 +2033,73 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             statuses=statuses,
             reservation_windows=frozenset(reservation_windows),
         )
+
+    async def _settle_pipelined_descriptor_groups(
+        self,
+        descriptor_groups: list[DescriptorAtomicGroup],
+        results: Sequence[BatchResult[object]],
+        parent_otel_span: Span | None,
+    ) -> RateLimitResponse:
+        """Every group's Lua call left in one pipeline, so each group has already checked and incremented on
+        its own before any result is read. A failed or over-limit group therefore refunds every group that
+        incremented, after it as well as before it, where the one-at-a-time loop only unwinds the groups it ran."""
+        replies: Final = await asyncio.gather(*results, return_exceptions=True)
+        responses: Final = [
+            self._pipelined_group_response(reply, meta)
+            for reply, (_keys, _args, meta) in zip(replies, descriptor_groups)
+        ]
+        applied: Final[list[list[AtomicCounterMeta]]] = []
+        statuses: Final[list[RateLimitStatus]] = []
+        reservation_windows: Final[set[ReservationWindowIdentity]] = set()  # mutable-ok: filled by the group loop
+        for response, (_keys, _args, meta) in zip(responses, descriptor_groups):
+            if isinstance(response, BaseException) or response["overall_code"] != "OK":
+                continue
+            applied.append(meta)
+            statuses.extend(response["statuses"])
+            reservation_windows.update(response.get("reservation_windows", frozenset()))
+
+        failure: Final = next((r for r in responses if isinstance(r, BaseException)), None)
+        if failure is not None:
+            log_redis_failure(
+                verbose_proxy_logger,
+                logging.ERROR,
+                f"atomic_check_and_increment_by_n: Redis Lua execution failed ({type(failure).__name__}). Refunding "
+                f"{len(applied)} pipelined descriptors and falling back to in-memory enforcement, counters will "
+                f"diverge from Redis until window expires (window_size={self.window_size}s)",
+                failure,
+            )
+            await self._refund_applied_descriptor_groups(applied)
+            flat_meta: Final[list[AtomicCounterMeta]] = [
+                m for _k, _a, group_meta in descriptor_groups for m in group_meta
+            ]
+            async with self._check_and_increment_lock:
+                return await self._atomic_check_and_increment_in_memory(
+                    per_counter_meta=flat_meta,
+                    parent_otel_span=parent_otel_span,
+                )
+        over_limit: Final = next(
+            (r for r in responses if not isinstance(r, BaseException) and r["overall_code"] == "OVER_LIMIT"), None
+        )
+        if over_limit is not None:
+            await self._refund_applied_descriptor_groups(applied)
+            return over_limit
+        if len(responses) == 1 and not isinstance(responses[0], BaseException):
+            return responses[0]
+        return RateLimitResponse(
+            overall_code="OK",
+            statuses=statuses,
+            reservation_windows=frozenset(reservation_windows),
+        )
+
+    def _pipelined_group_response(
+        self, reply: object, per_counter_meta: list[AtomicCounterMeta]
+    ) -> RateLimitResponse | BaseException:
+        if isinstance(reply, BaseException):
+            return reply
+        try:
+            return self._build_atomic_response(_as_counter_values(reply), per_counter_meta)
+        except Exception as e:  # noqa: BLE001  # a reply this group cannot read is that group's Lua failure
+            return e
 
     async def _refund_applied_descriptor_groups(
         self,

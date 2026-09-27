@@ -190,6 +190,26 @@ async def test_a_failing_reply_fails_only_its_own_operation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_reply_an_operation_cannot_decode_fails_only_that_operation() -> None:
+    def reply_for(command: tuple[Any, ...]) -> Any:
+        if command[0] == "MGET":
+            return "not-a-list"
+        return replies(command)
+
+    client = FakeClient(reply_for)
+    cache = FakeRedisCache(client)
+    batch = RedisBatch(cache)
+    got = batch.mget(["a:hit"])
+    written = batch.set("w", {"k": 1})
+    script = batch.script(SCRIPT, run_alone_script, ["w"], [])
+    with pytest.raises(TypeError, match="MGET reply is not a list"):
+        await got
+    assert await written is None
+    assert await script == [1, 2]
+    assert len(client.pipelines) == 1
+
+
+@pytest.mark.asyncio
 async def test_pipeline_failure_fails_every_operation_and_trips_the_breaker() -> None:
     cache, _client = make(fail=ConnectionError("redis down"))
     batch = RedisBatch(cache)
