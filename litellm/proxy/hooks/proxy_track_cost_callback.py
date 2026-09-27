@@ -282,6 +282,8 @@ class _ProxyDBLogger(CustomLogger):
         end_time=None,  # start/end time for completion
     ):
         from litellm.proxy.proxy_server import (
+            _update_cache_read_keys,
+            arm_update_cache_read,
             increment_spend_counters,
             proxy_logging_obj,
             update_cache,
@@ -360,6 +362,15 @@ class _ProxyDBLogger(CustomLogger):
                     end_user_id=end_user_id,
                     call_type=call_type,
                 ):
+                    await arm_update_cache_read(
+                        _update_cache_read_keys(
+                            user_id=user_id,
+                            end_user_id=end_user_id,
+                            team_id=team_id,
+                            tags=tags,
+                            response_cost=response_cost,
+                        )
+                    )
                     ## UPDATE DATABASE
                     charged: Final = await _update_database_and_spend_counters(
                         proxy_logging_obj=proxy_logging_obj,
